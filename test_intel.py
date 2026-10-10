@@ -64,6 +64,7 @@ def check():
     assert next(b for b in app.get('download_button') if b.proto.label == '导出当前筛选结果 CSV').proto.disabled
     next(b for b in app.button if b.label == '清空本会话，恢复 3 条虚构示例').click().run()
     assert len(app.session_state['records']) == 3
+    assert app.text_input[0].value == '' and app.session_state['search_results'].empty
     print('PASS: add/import, invalid values, CSV safety, filters, dedup, provenance, search failures/results, brief, session isolation/reset.')
 
 
