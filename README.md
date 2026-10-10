@@ -22,7 +22,9 @@ streamlit run streamlit_app.py
 
 ## 部署
 
-将本目录文件放入 GitHub 仓库根目录；当前源码仓库设为私有，部署前需由所有者授权 Streamlit 读取。在 [Streamlit Community Cloud](https://share.streamlit.io/) 登录并选择 Create app，指定仓库、实际分支名称及入口 `streamlit_app.py`，然后 Deploy。必要时由仓库所有者完成 GitHub 授权。部署成功后，使用 Cloud 提供的实际 `.streamlit.app` 地址分享。
+演示地址：[PathoIntel v0.1](https://pathointel-v01.streamlit.app/)
+
+将本目录文件放入 GitHub 仓库根目录；当前源码仓库已按所有者确认设为公开。在 [Streamlit Community Cloud](https://share.streamlit.io/) 登录并选择 Create app，指定仓库、实际分支名称及入口 `streamlit_app.py`，然后 Deploy。必要时由仓库所有者完成 GitHub 授权。部署成功后，使用 Cloud 提供的实际 `.streamlit.app` 地址分享。
 
 ## 验收
 
