@@ -11,6 +11,7 @@ st.caption('录入和导入内容只保存在当前浏览器会话的服务器�
 if 'records' not in st.session_state:
     st.session_state.records = demo_rows()
     st.session_state.search_results = pd.DataFrame(columns=COLUMNS)
+reset_id = st.session_state.setdefault('reset_id', 0)
 
 
 def add(data):
@@ -20,7 +21,7 @@ def add(data):
 
 
 with st.expander('录入或导入公开资料'):
-    with st.form('manual'):
+    with st.form(f'manual-{reset_id}'):
         name = st.text_input('产品名称 *', max_chars=200)
         vendor = st.text_input('厂商', max_chars=200)
         category = st.text_input('产品类别', max_chars=100)
@@ -36,7 +37,7 @@ with st.expander('录入或导入公开资料'):
             st.error(str(error))
     st.download_button('下载 CSV 模板', csv_bytes(pd.DataFrame(columns=COLUMNS)), 'pathointel_template.csv', 'text/csv')
     st.caption('UTF-8 CSV，必填列：产品名称、来源URL。获取日期留空时使用当天；导入一律标记为待核。最多 1 MB／500 行。')
-    upload = st.file_uploader('上传公开资料 CSV', type=['csv'], max_upload_size=1)
+    upload = st.file_uploader('上传公开资料 CSV', type=['csv'], max_upload_size=1, key=f'upload-{reset_id}')
     if st.button('导入 CSV', disabled=upload is None):
         try:
             add(import_csv(upload.getvalue()))
@@ -45,7 +46,7 @@ with st.expander('录入或导入公开资料'):
 
 with st.expander('真实联网检索｜FDA 510(k)公开记录'):
     st.caption('仅查美国 FDA 510(k)记录；不覆盖中国注册、所有产品或全网新闻。按决定日期排序，最多返回5条。结果不代表搜索穷尽，也不代表产品性能。无需新密钥或付费；共享配额或网络异常会导致失败。')
-    with st.form('search'):
+    with st.form(f'search-{reset_id}'):
         keyword = st.text_input('公开英文产品／厂商关键词', placeholder='microscope', max_chars=80)
         search = st.form_submit_button('检索 FDA 公开记录')
     if search:
@@ -68,9 +69,9 @@ with st.expander('真实联网检索｜FDA 510(k)公开记录'):
 
 records = st.session_state.records
 left, right, third = st.columns(3)
-category = left.selectbox('筛选产品类别', ['全部', *sorted(v for v in records['产品类别'].unique() if v)])
-mode = right.selectbox('筛选来源方式', ['全部', *records['来源方式'].unique()])
-scene = third.selectbox('筛选应用场景', ['全部', *sorted(v for v in records['应用场景'].unique() if v)])
+category = left.selectbox('筛选产品类别', ['全部', *sorted(v for v in records['产品类别'].unique() if v)], key=f'category-{reset_id}')
+mode = right.selectbox('筛选来源方式', ['全部', *records['来源方式'].unique()], key=f'mode-{reset_id}')
+scene = third.selectbox('筛选应用场景', ['全部', *sorted(v for v in records['应用场景'].unique() if v)], key=f'scene-{reset_id}')
 filtered = records
 if category != '全部':
     filtered = filtered[filtered['产品类别'] == category]
@@ -92,6 +93,6 @@ with st.expander('每周竞品资料简报｜基础模板'):
     st.text(report)
     st.download_button('下载简报草稿 TXT', report.encode('utf-8-sig'), 'pathointel_weekly_brief.txt', 'text/plain')
 if st.button('清空本会话，恢复 3 条虚构示例'):
-    st.session_state.records = demo_rows()
-    st.session_state.search_results = pd.DataFrame(columns=COLUMNS)
+    st.session_state.clear()
+    st.session_state.reset_id = reset_id + 1
     st.rerun()
