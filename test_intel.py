@@ -5,6 +5,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 import pandas as pd
+from cish_excerpt import COMPARISONS, PRODUCTS
 from intel import brief, csv_bytes, demo_rows, import_csv, merge_rows, normalize, search_fda, today
 
 
@@ -51,6 +52,10 @@ def check():
     path = str(Path(__file__).with_name('streamlit_app.py'))
     app = AppTest.from_file(path).run(timeout=30)
     assert not app.exception and len(app.session_state['records']) == 3
+    assert len(PRODUCTS) == 6 and len(COMPARISONS) == 6
+    assert len(app.dataframe[1].value) == 6 and len(app.dataframe[2].value) == 6
+    app.selectbox[3].select('Leica').run()
+    assert len(app.dataframe[1].value) == 1 and len(app.dataframe[2].value) == 6
     app.text_input[0].set_value('UI Test (fictional)')
     app.text_input[4].set_value('https://example.com/ui-test')
     next(b for b in app.button if b.label == '添加公开资料').click().run()
@@ -58,14 +63,14 @@ def check():
     isolated = AppTest.from_file(path).run(timeout=30)
     assert len(isolated.session_state['records']) == 3
     app.selectbox[0].select('影像设备').run()
-    assert len(app.dataframe[-1].value) == 1
+    assert len(app.dataframe[0].value) == 1
     app.selectbox[1].select('手动录入').run()
-    assert app.dataframe[-1].value.empty
+    assert app.dataframe[0].value.empty
     assert next(b for b in app.get('download_button') if b.proto.label == '导出当前筛选结果 CSV').proto.disabled
     next(b for b in app.button if b.label == '清空本会话，恢复 3 条虚构示例').click().run()
     assert len(app.session_state['records']) == 3
     assert app.text_input[0].value == '' and app.session_state['search_results'].empty
-    print('PASS: add/import, invalid values, CSV safety, filters, dedup, provenance, search failures/results, brief, session isolation/reset.')
+    print('PASS: add/import, invalid values, CSV safety, filters, dedup, provenance, search failures/results, brief, CISH file module, session isolation/reset.')
 
 
 if __name__ == '__main__':
