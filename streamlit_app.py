@@ -1,12 +1,13 @@
 import pandas as pd
 import streamlit as st
 
+from cish_excerpt import COMPARISONS, PRODUCTS
 from intel import COLUMNS, brief, csv_bytes, demo_rows, import_csv, merge_rows, normalize, search_fda, today
 
 st.set_page_config(page_title='PathoIntel v0.2', layout='wide')
 st.title('PathoIntel v0.2')
 st.caption('医疗产品竞争情报工作台 · 公开资料最小演示')
-st.warning('请勿输入内部、患者、个人或其他敏感信息。初始 3 条数据全部虚构；新增公开资料均待核。不提供临床建议。')
+st.warning('手动录入和 CSV 导入请勿包含内部、患者、个人或其他敏感信息。初始 3 条数据全部虚构；新增公开资料均待核。不提供临床建议。')
 st.caption('录入和导入内容只保存在当前浏览器会话的服务器内存，不写入 GitHub，不持久保存。刷新、断开或服务重启可能丢失，请及时导出。联网检索会将你提交的公开关键词发送给 FDA。')
 if 'records' not in st.session_state:
     st.session_state.records = demo_rows()
@@ -96,3 +97,16 @@ if st.button('清空本会话，恢复 3 条虚构示例'):
     st.session_state.clear()
     st.session_state.reset_id = reset_id + 1
     st.rerun()
+
+st.divider()
+st.header('CISH 培训文件资料')
+st.caption('以下为用户提供的《CISH产品技术培训》PDF 第 21–37 页的结构化摘录。原文件标注“仅供内部培训使用”；本板块若发布到公开网站，所有访客都可看到这些摘录。')
+st.warning('只核对了培训文件中的表述，尚未独立核对厂商资料或实验结果。染色图片缺少样本量、盲评、重复和统计，不能据此宣称产品性能更优。')
+product_tab, evidence_tab = st.tabs(['产品资料（6）', '比较证据（6）'])
+with product_tab:
+    selected_vendor = st.selectbox('筛选文件中的厂商', ['全部', *[row['厂商'] for row in PRODUCTS]])
+    displayed_products = [row for row in PRODUCTS if selected_vendor == '全部' or row['厂商'] == selected_vendor]
+    st.dataframe(pd.DataFrame(displayed_products), hide_index=True, width='stretch')
+with evidence_tab:
+    st.dataframe(pd.DataFrame(COMPARISONS), hide_index=True, width='stretch')
+    st.caption('第 32–36 页没有 Roche 或安必平的对应实测对照图；第 37 页属于客户反馈陈述。')
