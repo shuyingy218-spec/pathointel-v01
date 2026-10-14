@@ -80,7 +80,7 @@ def _result_rows(found, keyword, domain):
             continue
         title = str(item.get('title', ''))[:200]
         body = str(item.get('body', ''))[:400]
-        if terms and not any(term in f'{title} {body} {url}'.lower() for term in terms):
+        if terms and not all(term in f'{title} {body} {url}'.lower() for term in terms):
             continue
         seen.add(url)
         vendor = official_vendor(url)
