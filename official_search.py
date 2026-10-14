@@ -46,21 +46,29 @@ def search_official(keyword, domain=''):
         found = _bing_rss(query)
     except Exception:
         pass
-    if not found:
+    rows = _result_rows(found, keyword, domain)
+    if not rows:
         try:
             from ddgs import DDGS
             for backend in ('bing', 'brave'):
                 try:
                     found = DDGS(timeout=5).text(query, max_results=20, backend=backend)
-                    if found:
+                    rows = _result_rows(found, keyword, domain)
+                    if rows:
                         break
                 except Exception:
                     continue
         except ImportError:
             pass
-    if not found:
+    if not rows:
         raise ValueError('当前云端无法连接网页搜索源；没有添加资料。请使用本页“在浏览器打开实时搜索结果”入口查看搜索结果。')
+    rows.sort(key=lambda row: not row['来源核验'].startswith('已识别'))
+    return rows[:8]
 
+
+def _result_rows(found, keyword, domain):
+    """Filter unrelated hits before choosing another search source."""
+    terms = [term.lower() for term in keyword.split() if len(term) >= 2]
     rows, seen = [], set()
     for item in found:
         url = str(item.get('href', item.get('url', ''))).strip()
@@ -70,8 +78,11 @@ def search_official(keyword, domain=''):
         host = parts.hostname.lower()
         if domain and host != domain and not host.endswith('.' + domain):
             continue
+        title = str(item.get('title', ''))[:200]
+        body = str(item.get('body', ''))[:400]
+        if terms and not any(term in f'{title} {body} {url}'.lower() for term in terms):
+            continue
         seen.add(url)
         vendor = official_vendor(url)
-        rows.append({'来源核验': f'已识别厂商域名：{vendor}' if vendor else '官网身份待核', '网站域名': host, '页面标题': str(item.get('title', ''))[:200], '搜索摘要（待核）': str(item.get('body', ''))[:400], '链接': url})
-    rows.sort(key=lambda row: not row['来源核验'].startswith('已识别'))
-    return rows[:8]
+        rows.append({'来源核验': f'已识别厂商域名：{vendor}' if vendor else '官网身份待核', '网站域名': host, '页面标题': title, '搜索摘要（待核）': body, '链接': url})
+    return rows
