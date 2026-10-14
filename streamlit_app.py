@@ -2,14 +2,14 @@ import pandas as pd
 import streamlit as st
 from urllib.parse import quote_plus
 from intel import COLUMNS, brief, csv_bytes, demo_rows, import_csv, merge_rows, normalize, search_fda, today
-from official_search import search_official
-from dossier import ITEMS, add_evidence, dossier_brief, profile_table, seed_evidence
+from official_search import official_vendor, search_official
+from dossier import ITEMS, FIELDS, add_evidence, comparison_brief, dossier_brief, import_evidence_csv, profile_table, seed_evidence
 
-st.set_page_config(page_title='PathoIntel v0.3', layout='wide')
-st.title('PathoIntel v0.3')
-st.caption('病理产品资料工作台 · 官网联网搜索 · 达科为产品对比')
+st.set_page_config(page_title='PathoIntel v0.4', layout='wide')
+st.title('PathoIntel v0.4')
+st.caption('搜索官网 → 核对原文 → 记录产品事实 → 与达科为对比 → 导出')
 line = st.sidebar.text_input('当前研究产品线', 'EBER/CISH', max_chars=80).strip()
-st.sidebar.caption('我司基准：达科为。可切换至其他产品线。当前数据仅保存在会话中，请下载留存。')
+st.sidebar.caption('我司基准：达科为。可切换产品线；请在离开前导出证据 CSV，回来时可导入恢复。')
 if not line:
     st.info('请填写产品线名称。')
     st.stop()
@@ -21,6 +21,8 @@ if 'records' not in st.session_state:
 st.session_state.setdefault('website_results', [])
 st.session_state.setdefault('dossier_records', seed_evidence())
 st.session_state.setdefault('reset_id', 0)
+for key in ('ev_vendor', 'ev_product', 'ev_url'):
+    st.session_state.setdefault(key, '')
 rid = st.session_state.reset_id
 
 def add_rows(data):
@@ -28,8 +30,8 @@ def add_rows(data):
     st.session_state.records = merged
     st.success(f'新增 {count} 条；重复项 {len(data)-count} 条。新增资料均待核。')
 
-st.header('1｜病理产品官网资料联网搜索')
-st.caption('输入任意产品或厂商名称。搜索结果来自网页搜索服务；优先标出已识别的厂商域名。请打开原文核实后再录入。')
+st.header('1｜搜索并核对官网资料')
+st.caption('输入任意产品或厂商名称。搜索结果是待核候选，不是已确认的产品事实。')
 with st.form(f'web-{rid}'):
     query = st.text_input('产品／厂商关键词', 'EBER', max_chars=80)
     domain = st.text_input('限定官网域名（可选）', placeholder='例如 diagnostics.roche.com', max_chars=200)
@@ -50,23 +52,52 @@ if web_submit:
 if st.session_state.website_results:
     st.caption(f"搜索日期：{today()}。摘要未经核验；已识别域名不代表网页主张已核实。")
     st.dataframe(pd.DataFrame(st.session_state.website_results), hide_index=True, width='stretch', column_config={'链接': st.column_config.LinkColumn('打开来源')})
-    idx = st.selectbox('选择一条来源加入通用来源台账', range(len(st.session_state.website_results)), format_func=lambda i: st.session_state.website_results[i]['页面标题'], key='web-choice')
-    if st.button('加入来源台账'):
-        chosen = st.session_state.website_results[idx]
+    idx = st.selectbox('选择要核对的网页', range(len(st.session_state.website_results)), format_func=lambda i: st.session_state.website_results[i]['页面标题'], key='web-choice')
+    chosen = st.session_state.website_results[idx]
+    st.link_button('打开这条网页的原文', chosen['链接'])
+    if st.button('用这条来源录入产品事实'):
+        st.session_state.ev_vendor = official_vendor(chosen['链接']) or ''
+        st.session_state.ev_product = st.session_state.get('website_query', query).strip()
+        st.session_state.ev_url = chosen['链接']
+        st.rerun()
+
+st.subheader('核对原文后，逐条记录事实')
+st.caption('每条事实对应一个来源。产品名称请写具体试剂或设备型号；价格注明地区、日期、单位与口径；备案注明主体、证号、地区与状态。')
+with st.form('evidence-form'):
+    ev_vendor = st.text_input('厂商 *', key='ev_vendor', max_chars=200)
+    ev_product = st.text_input('试剂或设备产品名称／型号 *', key='ev_product', max_chars=200)
+    ev_item = st.selectbox('信息项目', ITEMS)
+    ev_content = st.text_area('原文支持的具体事实 *', max_chars=2000)
+    ev_url = st.text_input('来源 URL *', key='ev_url', max_chars=2000)
+    ev_note = st.text_input('来源说明／地区／版本／页码', max_chars=500)
+    reviewed = st.checkbox('我已打开并核对原文；本条内容不是搜索摘要推断')
+    ev_submit = st.form_submit_button('保存到产品证据卡')
+if ev_submit:
+    if not reviewed:
+        st.error('请先打开并核对原文，再保存产品事实。')
+    else:
         try:
-            add_rows(normalize(pd.DataFrame([{'产品名称': chosen['页面标题'] or st.session_state.get('website_query','搜索结果'), '厂商': '', '产品类别': line, '核心特点': '搜索摘要（待核）：' + chosen['搜索摘要（待核）'], '来源URL': chosen['链接']}]), '官网候选搜索'))
+            st.session_state.dossier_records = add_evidence(st.session_state.dossier_records, {'产品线': line, '厂商': ev_vendor, '产品名称': ev_product, '信息项目': ev_item, '内容': ev_content, '来源URL': ev_url, '来源说明': ev_note}, reviewed=True)
+            st.success('已保存；下方产品证据卡、对比和简报已更新。')
         except ValueError as error:
             st.error(str(error))
 
-st.header(f'2｜{line} 产品资料与达科为对比')
+st.header(f'2｜{line} 产品证据卡与达科为对比')
 st.caption('初始 EBER/CISH 证据来自厂商公开产品页或说明书。每项保留来源链接；价格和注册备案未在已录入来源中确认时显示待核。')
 evidence = st.session_state.dossier_records
 line_data = evidence[evidence['产品线'] == line]
-t_profiles, t_compare, t_sources, t_add, t_brief = st.tabs(['产品画像', '达科为对比', '证据明细', '补充证据', '产品线简报'])
+t_profiles, t_compare, t_sources, t_brief = st.tabs(['产品证据卡', '达科为对比', '证据台账与恢复', '产品线资料汇编'])
 with t_profiles:
     profiles = profile_table(evidence, line)
-    st.dataframe(profiles, hide_index=True, width='stretch')
-    st.download_button('导出产品画像 CSV', csv_bytes(profiles), 'pathointel_profiles.csv', 'text/csv')
+    if profiles.empty:
+        st.info('当前产品线尚无证据。请在上方搜索并录入第一条事实。')
+    else:
+        st.dataframe(profiles, hide_index=True, width='stretch')
+        card_idx = st.selectbox('查看具体产品及其逐项来源', range(len(profiles)), format_func=lambda i: f"{profiles.iloc[i]['厂商']}｜{profiles.iloc[i]['产品名称']}")
+        card = profiles.iloc[card_idx]
+        card_facts = line_data[(line_data['厂商'] == card['厂商']) & (line_data['产品名称'] == card['产品名称'])]
+        st.dataframe(card_facts[['信息项目', '内容', '来源URL', '来源说明', '获取日期', '证据状态']], hide_index=True, width='stretch', column_config={'来源URL': st.column_config.LinkColumn('打开原文')})
+        st.download_button('导出产品卡 CSV', csv_bytes(profiles), 'pathointel_product_cards.csv', 'text/csv')
 with t_compare:
     rivals = list(dict.fromkeys(v for v in line_data['厂商'] if v != '达科为'))
     if rivals:
@@ -81,27 +112,19 @@ with t_compare:
                     else:
                         st.dataframe(matches[['产品名称','内容','来源URL','来源说明','证据状态']], hide_index=True, width='stretch', column_config={'来源URL': st.column_config.LinkColumn('来源')})
         st.caption('并列展示来源内容，不自动判定优劣；不同型号、地区和条件不可直接比较。')
+        brief_text = comparison_brief(evidence, line, rival)
+        st.download_button('下载达科为对比简报', brief_text.encode('utf-8-sig'), 'pathointel_dakewe_comparison.txt', 'text/plain')
     else:
         st.info('当前产品线尚无竞品证据；请先在“补充证据”录入达科为和竞品资料。')
 with t_sources:
     st.dataframe(line_data, hide_index=True, width='stretch', column_config={'来源URL': st.column_config.LinkColumn('来源')})
-    st.download_button('导出产品证据 CSV', csv_bytes(line_data), 'pathointel_product_evidence.csv', 'text/csv')
-with t_add:
-    st.caption('打开来源原文后，每条事实单独录入。价格请注明地区、日期、单位和口径；备案请注明证号、主体、地区和状态。')
-    with st.form('evidence-form'):
-        ev_vendor = st.text_input('厂商', max_chars=200)
-        ev_product = st.text_input('试剂或自动化设备名称', max_chars=200)
-        ev_item = st.selectbox('信息项目', ITEMS)
-        ev_content = st.text_area('来源明确支持的内容', max_chars=2000)
-        source_options = ['手动填写'] + [r['链接'] for r in st.session_state.website_results]
-        ev_source = st.selectbox('搜索来源（或手动填写）', source_options)
-        ev_url = st.text_input('来源 URL', max_chars=2000)
-        ev_note = st.text_input('来源说明／版本／页码', max_chars=500)
-        ev_submit = st.form_submit_button('保存证据')
-    if ev_submit:
+    st.download_button('导出当前产品线证据 CSV', csv_bytes(line_data.reindex(columns=FIELDS)), 'pathointel_product_evidence.csv', 'text/csv', disabled=line_data.empty)
+    st.download_button('备份全部产品线证据 CSV', csv_bytes(evidence.reindex(columns=FIELDS)), 'pathointel_all_evidence.csv', 'text/csv')
+    restore_file = st.file_uploader('从此前导出的产品证据 CSV 恢复（最多 1 MB）', type=['csv'], max_upload_size=1, key='restore-evidence')
+    if st.button('恢复证据', disabled=restore_file is None):
         try:
-            st.session_state.dossier_records = add_evidence(evidence, {'产品线': line, '厂商': ev_vendor, '产品名称': ev_product, '信息项目': ev_item, '内容': ev_content, '来源URL': ev_url if ev_source == '手动填写' else ev_source, '来源说明': ev_note})
-            st.rerun()
+            st.session_state.dossier_records, count = import_evidence_csv(evidence, restore_file.getvalue())
+            st.success(f'恢复 {count} 条新证据；重复项已跳过。')
         except ValueError as error:
             st.error(str(error))
 with t_brief:

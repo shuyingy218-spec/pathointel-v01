@@ -1,4 +1,7 @@
-"""Field-level, source-linked EBER/CISH product evidence."""
+"""Field-level pathology product evidence and reproducible comparison exports."""
+import io
+from datetime import datetime
+
 import pandas as pd
 from intel import public_url, today
 
@@ -25,14 +28,15 @@ PUBLIC_FACTS = [
 def seed_evidence():
     return pd.DataFrame([['EBER/CISH', vendor, product, item, content, url, '厂商公开网页/说明书；页面地区与版本待复核', today(), '厂商表述，待独立核验'] for vendor, product, item, content, url in PUBLIC_FACTS], columns=FIELDS)
 
-def add_evidence(existing, row):
+def add_evidence(existing, row, reviewed=False):
     values = {field: str(row.get(field, '')).strip() for field in FIELDS}
     if any(not values[field] for field in ['产品线', '厂商', '产品名称', '内容', '来源URL']):
         raise ValueError('产品线、厂商、产品名称、内容和来源URL均必填。')
     if values['信息项目'] not in ITEMS or any(len(value) > 2000 for value in values.values()):
         raise ValueError('信息项目无效或字段超过 2000 字。')
     public_url(values['来源URL'])
-    values['获取日期'], values['证据状态'] = today(), '人工录入，待核'
+    values['获取日期'] = today()
+    values['证据状态'] = '已人工核对原文' if reviewed else '人工录入，待核'
     result = pd.concat([existing, pd.DataFrame([values], columns=FIELDS)], ignore_index=True)
     result = result.drop_duplicates(['产品线', '厂商', '产品名称', '信息项目', '内容', '来源URL'])
     if len(result) > 500:
@@ -41,15 +45,70 @@ def add_evidence(existing, row):
 
 def profile_table(evidence, line):
     subset = evidence[evidence['产品线'] == line]
-    vendors = list(dict.fromkeys(['达科为', *subset['厂商'].tolist()]))
     rows = []
-    for vendor in vendors:
-        row = {'厂商': vendor}
+    for (vendor, product), facts in subset.groupby(['厂商', '产品名称'], sort=False):
+        row = {'厂商': vendor, '产品名称': product}
         for item in ITEMS:
-            claims = subset[(subset['厂商'] == vendor) & (subset['信息项目'] == item)]['内容'].drop_duplicates()
+            claims = facts[facts['信息项目'] == item]['内容'].drop_duplicates()
             row[item] = '\n'.join(claims) if len(claims) else '未公开／待人工核验'
+        row['来源数'] = facts['来源URL'].nunique()
         rows.append(row)
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=['厂商', '产品名称', *ITEMS, '来源数'])
+
+def import_evidence_csv(existing, content):
+    """Restore an exported evidence ledger without replacing seeded facts."""
+    if not content or len(content) > 1_000_000:
+        raise ValueError('证据 CSV 不能为空或超过 1 MB。')
+    try:
+        frame = pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False, encoding='utf-8-sig')
+    except (ValueError, UnicodeError, pd.errors.ParserError) as error:
+        raise ValueError('无法读取证据 CSV，请使用 UTF-8 编码。') from error
+    if len(frame) == 0 or len(frame) > 500 or list(frame.columns) != FIELDS:
+        raise ValueError('证据 CSV 必须保留导出的 9 列原顺序，且包含 1–500 行。')
+    frame = frame.fillna('').astype(str)
+    for field in FIELDS:
+        frame[field] = frame[field].str.strip()
+        if frame[field].str.len().gt(2000).any():
+            raise ValueError('单个证据字段不能超过 2000 字。')
+    for field in ['产品线', '厂商', '产品名称', '信息项目', '内容', '来源URL', '获取日期', '证据状态']:
+        if frame[field].eq('').any():
+            raise ValueError(f'证据 CSV 的“{field}”不能为空。')
+    if not frame['信息项目'].isin(ITEMS).all():
+        raise ValueError('证据 CSV 包含无效的信息项目。')
+    for url in frame['来源URL']:
+        public_url(url)
+    for value in frame['获取日期']:
+        try:
+            if datetime.strptime(value, '%Y-%m-%d').date().isoformat() != value or value > today():
+                raise ValueError()
+        except ValueError as error:
+            raise ValueError('获取日期必须是 YYYY-MM-DD，且不能晚于今天。') from error
+    combined = pd.concat([existing, frame], ignore_index=True)
+    unique = combined.drop_duplicates(['产品线', '厂商', '产品名称', '信息项目', '内容', '来源URL'])
+    if len(unique) > 500:
+        raise ValueError('当前会话最多保存 500 条证据；本次未导入。')
+    return unique.reset_index(drop=True), len(unique) - len(existing)
+
+def comparison_brief(evidence, line, rival):
+    """One-product-line, two-vendor brief with source links and explicit gaps."""
+    scoped = evidence[evidence['产品线'] == line]
+    lines = [f'PathoIntel｜{line}｜达科为 vs {rival}', f'生成日期：{today()}｜范围：当前会话已录入的公开来源', '每项为厂商表述或人工核对记录；不据此自动判断产品优劣。', '']
+    gaps = []
+    for item in ITEMS:
+        lines.append(f'【{item}】')
+        for vendor in ['达科为', rival]:
+            facts = scoped[(scoped['厂商'] == vendor) & (scoped['信息项目'] == item)]
+            if facts.empty:
+                lines.append(f'{vendor}：未公开／待人工核验')
+                gaps.append(f'{vendor}：{item}')
+            else:
+                for _, fact in facts.iterrows():
+                    lines.append(f"{vendor}｜{fact['产品名称']}：{fact['内容']}")
+                    lines.append(f"  来源：{fact['来源URL']}｜获取：{fact['获取日期']}｜{fact['证据状态']}")
+        lines.append('')
+    lines.append('待补证据：' + ('；'.join(gaps) if gaps else '无空缺字段；仍需核对型号、地区和版本。'))
+    lines.append('分析判断与下一步：请人工填写，明确依据及待验证事项。')
+    return '\n'.join(lines)
 
 def dossier_brief(evidence, line):
     subset = evidence[evidence['产品线'] == line]
