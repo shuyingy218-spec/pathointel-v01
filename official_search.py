@@ -5,8 +5,8 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 OFFICIAL_DOMAINS = {
-    'leicabiosystems.com': 'Leica Biosystems',
-    'roche.com': 'Roche Diagnostics',
+    'leicabiosystems.com': 'Leica',
+    'roche.com': 'Roche',
     'zsbio.com': '中杉金桥',
     'celnovte.com': '赛诺特',
     'gzlbp.com': '安必平',
