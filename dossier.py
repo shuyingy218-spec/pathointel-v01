@@ -1,6 +1,6 @@
 """Field-level pathology product evidence and reproducible comparison exports."""
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from intel import public_url, today
@@ -22,7 +22,6 @@ PUBLIC_FACTS = [
     ('赛诺特', 'EBER Probe（自动化）', '配套自动化设备', 'IFU 仅写 IHC automated system，未确认具体 CNT 型号。', 'https://www.celnovte.com/wp-content/uploads/2022/05/EBER-for-Automated-IFU.pdf'),
     ('达科为', 'PathDR. NS40', '配套自动化设备', '官网列出 IHC、ISH、ICC、双染及多染项目；页面未证明与特定 EBER 探针货号兼容。', 'https://cn.dakewemedical.com/ihc-ish-instruments/NS40_IHC_Stainer.html'),
     ('达科为', 'PathDR. NS40', '技术特点', '官网列出可调加样量 100/150 μL、双机械臂、满载 40 片运行约 2.5 小时。', 'https://cn.dakewemedical.com/ihc-ish-instruments/NS40_IHC_Stainer.html'),
-    ('达科为', '达科为 EBER 配套试剂（待核）', '目标试剂', '当前核对的 NS40 设备页未列出具体 EBER 试剂货号；需另查产品目录或说明书，不能据此推断有无自有 EBER 试剂。', 'https://cn.dakewemedical.com/ihc-ish-instruments/NS40_IHC_Stainer.html'),
 ]
 
 def seed_evidence():
@@ -116,4 +115,49 @@ def dossier_brief(evidence, line):
     for _, row in subset.iterrows():
         lines.extend([f"{row['厂商']}｜{row['产品名称']}｜{row['信息项目']}", row['内容'], f"来源：{row['来源URL']}｜{row['来源说明']}", f"获取：{row['获取日期']}｜{row['证据状态']}", ''])
     lines.extend(['待补：价格单位/地区/时间/口径；注册备案主体/证号/地区/状态；设备与试剂版本兼容性。', '待人工填写：本周变化、对达科为的影响、需验证事项。', '高阶提纲：市场细分、需求采购、厂商布局与渠道、价格准入、竞争变化、机会风险。'])
+    return '\n'.join(lines)
+
+
+def weekly_dossier_brief(evidence, line):
+    """Report newly reviewed facts, without presenting built-in examples as news."""
+    start = (datetime.strptime(today(), '%Y-%m-%d').date() - timedelta(days=6)).isoformat()
+    scoped = evidence[evidence['产品线'] == line]
+    recent = scoped[
+        (scoped['获取日期'] >= start)
+        & (scoped['证据状态'] == '已人工核对原文')
+    ]
+    lines = [
+        f'PathoIntel｜{line}｜每周竞品资料简报',
+        f'记录窗口：{start} 至 {today()}（按核对日期，不代表产品发布日期）',
+        f'本周新增已核对证据：{len(recent)} 条；覆盖厂商：{recent["厂商"].nunique()} 家',
+        '预置演示资料不计入本周新增。以下为资料整理，不自动判断优劣。',
+        '',
+        '【本周新增】',
+    ]
+    if recent.empty:
+        lines.append('暂无本周新增且已核对原文的证据。')
+    else:
+        for _, row in recent.iterrows():
+            lines.extend([
+                f"{row['厂商']}｜{row['产品名称']}｜{row['信息项目']}：{row['内容']}",
+                f"来源：{row['来源URL']}｜说明：{row['来源说明'] or '未填写'}",
+            ])
+    lines.extend(['', '【当前资料缺口】'])
+    profiles = profile_table(evidence, line)
+    if profiles.empty:
+        lines.append('尚无本产品线资料。')
+    else:
+        for _, row in profiles.iterrows():
+            missing = [item for item in ITEMS if row[item] == '未公开／待人工核验']
+            if missing:
+                lines.append(f"{row['厂商']}｜{row['产品名称']}：{'、'.join(missing)}")
+        if not any(row[item] == '未公开／待人工核验' for _, row in profiles.iterrows() for item in ITEMS):
+            lines.append('七个字段均有录入内容；仍需复核地区、版本和证据有效性。')
+    lines.extend([
+        '',
+        '【人工判断与下周动作】',
+        '本周值得关注的变化（需附来源）：',
+        '对达科为的影响（判断及依据）：',
+        '优先核对的价格、备案、试剂与设备兼容性：',
+    ])
     return '\n'.join(lines)

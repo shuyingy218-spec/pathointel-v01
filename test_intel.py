@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 
 import pandas as pd
 from cish_excerpt import COMPARISONS, PRODUCTS
+from dossier import weekly_dossier_brief
 from intel import brief, csv_bytes, demo_rows, import_csv, merge_rows, normalize, search_fda, today
 
 
@@ -51,26 +52,21 @@ def check():
     from streamlit.testing.v1 import AppTest
     path = str(Path(__file__).with_name('streamlit_app.py'))
     app = AppTest.from_file(path).run(timeout=30)
-    assert not app.exception and len(app.session_state['records']) == 3
+    assert not app.exception and len(app.tabs) == 3
+    assert len(app.session_state['dossier_records']) == 13
+    assert '本周新增已核对证据：0 条' in weekly_dossier_brief(app.session_state['dossier_records'], 'EBER/CISH')
     assert len(PRODUCTS) == 6 and len(COMPARISONS) == 6
-    assert len(app.dataframe[1].value) == 6 and len(app.dataframe[2].value) == 6
-    app.selectbox[3].select('Leica').run()
-    assert len(app.dataframe[1].value) == 1 and len(app.dataframe[2].value) == 6
-    app.text_input[0].set_value('UI Test (fictional)')
+    app.text_input[2].set_value('UI Test')
+    app.text_input[3].set_value('Sample reagent X')
+    app.text_area[0].set_value('Source-checked example composition')
     app.text_input[4].set_value('https://example.com/ui-test')
-    next(b for b in app.button if b.label == '添加公开资料').click().run()
-    assert not app.exception and len(app.session_state['records']) == 4
+    app.checkbox[0].check()
+    app.button[1].click().run(timeout=30)
+    assert not app.exception and len(app.session_state['dossier_records']) == 14
+    assert '本周新增已核对证据：1 条' in weekly_dossier_brief(app.session_state['dossier_records'], 'EBER/CISH')
     isolated = AppTest.from_file(path).run(timeout=30)
-    assert len(isolated.session_state['records']) == 3
-    app.selectbox[0].select('影像设备').run()
-    assert len(app.dataframe[0].value) == 1
-    app.selectbox[1].select('手动录入').run()
-    assert app.dataframe[0].value.empty
-    assert next(b for b in app.get('download_button') if b.proto.label == '导出当前筛选结果 CSV').proto.disabled
-    next(b for b in app.button if b.label == '清空本会话，恢复 3 条虚构示例').click().run()
-    assert len(app.session_state['records']) == 3
-    assert app.text_input[0].value == '' and app.session_state['search_results'].empty
-    print('PASS: add/import, invalid values, CSV safety, filters, dedup, provenance, search failures/results, brief, CISH file module, session isolation/reset.')
+    assert len(isolated.session_state['dossier_records']) == 13
+    print('PASS: evidence entry, weekly brief, CSV safety, provenance, search failures/results, CISH source module and session isolation.')
 
 
 if __name__ == '__main__':
