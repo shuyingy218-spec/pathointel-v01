@@ -38,3 +38,23 @@ def add_evidence(existing, row):
     if len(result) > 500:
         raise ValueError('本会话最多保存 500 条证据。')
     return result.reset_index(drop=True)
+
+def profile_table(evidence, line):
+    subset = evidence[evidence['产品线'] == line]
+    vendors = list(dict.fromkeys(['达科为', *subset['厂商'].tolist()]))
+    rows = []
+    for vendor in vendors:
+        row = {'厂商': vendor}
+        for item in ITEMS:
+            claims = subset[(subset['厂商'] == vendor) & (subset['信息项目'] == item)]['内容'].drop_duplicates()
+            row[item] = '\n'.join(claims) if len(claims) else '未公开／待人工核验'
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+def dossier_brief(evidence, line):
+    subset = evidence[evidence['产品线'] == line]
+    lines = [f'PathoIntel｜{line} 产品资料简报草稿｜{today()}', '范围：当前录入资料；获取日期不是产品发布或新闻发生日期。', '我司基准：达科为。事实保留来源，不自动判断优劣。', '']
+    for _, row in subset.iterrows():
+        lines.extend([f"{row['厂商']}｜{row['产品名称']}｜{row['信息项目']}", row['内容'], f"来源：{row['来源URL']}｜{row['来源说明']}", f"获取：{row['获取日期']}｜{row['证据状态']}", ''])
+    lines.extend(['待补：价格单位/地区/时间/口径；注册备案主体/证号/地区/状态；设备与试剂版本兼容性。', '待人工填写：本周变化、对达科为的影响、需验证事项。', '高阶提纲：市场细分、需求采购、厂商布局与渠道、价格准入、竞争变化、机会风险。'])
+    return '\n'.join(lines)
