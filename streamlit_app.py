@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from urllib.parse import quote_plus
 from intel import COLUMNS, brief, csv_bytes, demo_rows, import_csv, merge_rows, normalize, search_fda, today
 from official_search import search_official
 from dossier import ITEMS, add_evidence, dossier_brief, profile_table, seed_evidence
@@ -32,7 +33,10 @@ st.caption('输入任意产品或厂商名称。搜索结果来自网页搜索�
 with st.form(f'web-{rid}'):
     query = st.text_input('产品／厂商关键词', 'EBER', max_chars=80)
     domain = st.text_input('限定官网域名（可选）', placeholder='例如 diagnostics.roche.com', max_chars=200)
-    web_submit = st.form_submit_button('联网搜索官网资料')
+    web_submit = st.form_submit_button('搜索并整理网页结果')
+search_query = query.strip() + (f' site:{domain.strip()}' if domain.strip() else ' pathology product official')
+st.link_button('在浏览器打开实时搜索结果', 'https://www.bing.com/search?q=' + quote_plus(search_query))
+st.caption('如云端搜索服务暂不可用，可用上方按钮在浏览器搜索引擎查看实时结果，再将核对后的事实录入下方“补充证据”。')
 if web_submit:
     st.session_state.website_results = []
     try:
