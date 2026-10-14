@@ -1,4 +1,4 @@
-"""Search pathology product pages on general web engines."""
+"""Search public pathology product pages using independent web engines."""
 import re
 from urllib.parse import urlsplit
 
@@ -11,6 +11,7 @@ OFFICIAL_DOMAINS = {
     'dakewemedical.com': '达科为',
 }
 
+
 def official_vendor(url):
     parts = urlsplit(url)
     if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password:
@@ -20,6 +21,7 @@ def official_vendor(url):
         if host == domain or host.endswith('.' + domain):
             return vendor
     return None
+
 
 def search_official(keyword, domain=''):
     keyword = keyword.strip()
@@ -31,19 +33,37 @@ def search_official(keyword, domain=''):
     query = f'{keyword} site:{domain}' if domain else f'{keyword} 病理 产品 官网'
     try:
         from ddgs import DDGS
-        found = DDGS(timeout=12).text(query, region='cn-zh', max_results=30, backend='auto')
-    except Exception as error:
-        raise ValueError('官网搜索服务暂不可用；没有添加资料，请稍后重试。') from error
+    except ImportError as error:
+        raise ValueError('搜索组件未能启动；没有添加资料，请联系维护者。') from error
+
+    found = []
+    for backend in ('bing', 'brave', 'mojeek', 'duckduckgo'):
+        try:
+            found = DDGS(timeout=7).text(query, region='cn-zh', max_results=20, backend=backend)
+            if found:
+                break
+        except Exception:
+            continue
+    if not found:
+        raise ValueError('当前云端无法连接可用网页搜索源；没有添加资料，请稍后重试。')
+
     rows, seen = [], set()
-    for item in found or []:
+    for item in found:
         url = str(item.get('href', '')).strip()
         parts = urlsplit(url)
         if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password or url in seen:
             continue
-        if domain and not (parts.hostname.lower() == domain or parts.hostname.lower().endswith('.' + domain)):
+        host = parts.hostname.lower()
+        if domain and host != domain and not host.endswith('.' + domain):
             continue
         seen.add(url)
         vendor = official_vendor(url)
-        rows.append({'来源核验': f'已识别厂商域名：{vendor}' if vendor else '官网身份待核', '网站域名': parts.hostname.lower(), '页面标题': str(item.get('title', ''))[:200], '搜索摘要（待核）': str(item.get('body', ''))[:400], '链接': url})
+        rows.append({
+            '来源核验': f'已识别厂商域名：{vendor}' if vendor else '官网身份待核',
+            '网站域名': host,
+            '页面标题': str(item.get('title', ''))[:200],
+            '搜索摘要（待核）': str(item.get('body', ''))[:400],
+            '链接': url,
+        })
     rows.sort(key=lambda row: not row['来源核验'].startswith('已识别'))
     return rows[:8]
