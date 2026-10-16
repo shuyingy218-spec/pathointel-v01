@@ -1,8 +1,12 @@
 """Field-level pathology product evidence and reproducible comparison exports."""
 import io
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from zipfile import BadZipFile
 
 import pandas as pd
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils.exceptions import InvalidFileException
 from intel import public_url, today
 
 ITEMS = ['目标试剂', '配套自动化设备', '组成', '技术特点', '产品布局', '价格与口径', '注册备案情况']
@@ -54,6 +58,39 @@ def profile_table(evidence, line):
         rows.append(row)
     return pd.DataFrame(rows, columns=['厂商', '产品名称', *ITEMS, '来源数'])
 
+def xlsx_bytes(evidence):
+    """Create an Excel-readable, source-linked evidence backup."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = '产品证据'
+    sheet.sheet_view.showGridLines = False
+    sheet.freeze_panes = 'A2'
+    frame = evidence.reindex(columns=FIELDS).fillna('').astype(str)
+    sheet.append(FIELDS)
+    for row in frame.itertuples(index=False, name=None):
+        sheet.append(row)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='163A5F')
+        cell.alignment = Alignment(vertical='center')
+    sheet.row_dimensions[1].height = 25
+    widths = [17, 18, 32, 19, 60, 52, 42, 15, 22]
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[sheet.cell(1, index).column_letter].width = width
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.data_type = 's'  # Text beginning with '=' must not become an Excel formula.
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+        source = row[5]
+        if source.value:
+            source.hyperlink = source.value
+            source.font = Font(color='1769AA', underline='single')
+    sheet.auto_filter.ref = sheet.dimensions
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
 def import_evidence_csv(existing, content):
     """Restore an exported evidence ledger without replacing seeded facts."""
     if not content or len(content) > 1_000_000:
@@ -62,8 +99,44 @@ def import_evidence_csv(existing, content):
         frame = pd.read_csv(io.BytesIO(content), dtype=str, keep_default_na=False, encoding='utf-8-sig')
     except (ValueError, UnicodeError, pd.errors.ParserError) as error:
         raise ValueError('无法读取证据 CSV，请使用 UTF-8 编码。') from error
+    return _merge_evidence(existing, frame, 'CSV')
+
+
+def import_evidence_xlsx(existing, content):
+    """Restore the first worksheet of an exported Excel evidence backup."""
+    if not content or len(content) > 1_000_000:
+        raise ValueError('证据 Excel 不能为空或超过 1 MB。')
+    try:
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
+    except (BadZipFile, InvalidFileException, ValueError, OSError) as error:
+        raise ValueError('无法读取证据 Excel，请导入本网页下载的 .xlsx 文件。') from error
+    try:
+        rows = []
+        for cells in workbook.active.iter_rows(max_row=502, max_col=10):
+            if not any(cell.value is not None for cell in cells):
+                continue
+            if any(cell.data_type == 'f' for cell in cells):
+                raise ValueError('证据 Excel 不能包含公式。')
+            if cells[9].value is not None:
+                raise ValueError('证据 Excel 只能包含导出的 9 列。')
+            values = []
+            for field, cell in zip(FIELDS, cells[:9]):
+                value = cell.value
+                if field == '获取日期' and isinstance(value, (date, datetime)):
+                    value = value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
+                values.append('' if value is None else str(value))
+            rows.append(values)
+        if not rows or rows[0] != FIELDS:
+            raise ValueError('证据 Excel 必须保留导出的 9 列原顺序。')
+        frame = pd.DataFrame(rows[1:], columns=FIELDS)
+    finally:
+        workbook.close()
+    return _merge_evidence(existing, frame, 'Excel')
+
+
+def _merge_evidence(existing, frame, format_name):
     if len(frame) == 0 or len(frame) > 500 or list(frame.columns) != FIELDS:
-        raise ValueError('证据 CSV 必须保留导出的 9 列原顺序，且包含 1–500 行。')
+        raise ValueError(f'证据 {format_name} 必须保留导出的 9 列原顺序，且包含 1–500 行。')
     frame = frame.fillna('').astype(str)
     for field in FIELDS:
         frame[field] = frame[field].str.strip()
@@ -71,9 +144,9 @@ def import_evidence_csv(existing, content):
             raise ValueError('单个证据字段不能超过 2000 字。')
     for field in ['产品线', '厂商', '产品名称', '信息项目', '内容', '来源URL', '获取日期', '证据状态']:
         if frame[field].eq('').any():
-            raise ValueError(f'证据 CSV 的“{field}”不能为空。')
+            raise ValueError(f'证据 {format_name} 的“{field}”不能为空。')
     if not frame['信息项目'].isin(ITEMS).all():
-        raise ValueError('证据 CSV 包含无效的信息项目。')
+        raise ValueError(f'证据 {format_name} 包含无效的信息项目。')
     for url in frame['来源URL']:
         public_url(url)
     for value in frame['获取日期']:

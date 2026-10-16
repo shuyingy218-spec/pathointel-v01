@@ -1,7 +1,10 @@
 """Run the evidence workflow without network or Streamlit."""
+import io
 import unittest
 
-from dossier import FIELDS, add_evidence, comparison_brief, import_evidence_csv, profile_table, seed_evidence, weekly_dossier_brief
+from openpyxl import load_workbook
+
+from dossier import FIELDS, add_evidence, comparison_brief, import_evidence_csv, import_evidence_xlsx, profile_table, seed_evidence, weekly_dossier_brief, xlsx_bytes
 from intel import csv_bytes
 
 
@@ -39,6 +42,27 @@ class ProductWorkflowTests(unittest.TestCase):
         row.loc[row.index[0], '来源URL'] = 'http://127.0.0.1/private'
         with self.assertRaises(ValueError):
             import_evidence_csv(initial, csv_bytes(row[FIELDS]))
+
+    def test_excel_backup_round_trip_keeps_chinese_sources_and_text(self):
+        initial = seed_evidence()
+        updated = add_evidence(initial, {
+            '产品线': 'HER2', '厂商': '示例厂商', '产品名称': '示例试剂',
+            '信息项目': '组成', '内容': '=待核对的中文描述',
+            '来源URL': 'https://example.org/product', '来源说明': '厂商官网',
+        }, reviewed=True)
+        content = xlsx_bytes(updated)
+        workbook = load_workbook(io.BytesIO(content), read_only=False)
+        sheet = workbook.active
+        self.assertEqual(sheet.title, '产品证据')
+        self.assertEqual([cell.value for cell in sheet[1]], FIELDS)
+        self.assertEqual(sheet.cell(15, 5).value, '=待核对的中文描述')
+        self.assertEqual(sheet.cell(15, 5).data_type, 's')
+        self.assertEqual(sheet.cell(15, 6).hyperlink.target, 'https://example.org/product')
+        workbook.close()
+        restored, count = import_evidence_xlsx(initial, content)
+        self.assertEqual(count, 1)
+        self.assertEqual(restored.iloc[-1]['内容'], '=待核对的中文描述')
+        self.assertEqual(import_evidence_xlsx(restored, content)[1], 0)
 
     def test_weekly_brief_counts_only_newly_reviewed_facts(self):
         initial = seed_evidence()

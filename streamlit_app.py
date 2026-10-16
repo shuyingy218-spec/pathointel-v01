@@ -12,9 +12,11 @@ from dossier import (
     comparison_brief,
     dossier_brief,
     import_evidence_csv,
+    import_evidence_xlsx,
     profile_table,
     seed_evidence,
     weekly_dossier_brief,
+    xlsx_bytes,
 )
 from intel import COLUMNS, csv_bytes, demo_rows, search_fda, today
 from official_search import official_vendor, search_official
@@ -42,7 +44,7 @@ for field in ("ev_vendor", "ev_product", "ev_url"):
 
 line = st.sidebar.text_input("研究产品线", "EBER/CISH", max_chars=80).strip()
 st.sidebar.caption("比较基准：达科为")
-st.sidebar.info("本版不自动保存。录入后请下载证据 CSV；下次打开网页时导入恢复。")
+st.sidebar.info("本版不自动保存。录入后请下载证据 Excel；下次打开网页时导入恢复。")
 if not line:
     st.info("请先在左侧填写研究产品线。")
     st.stop()
@@ -138,7 +140,7 @@ with search_tab:
                 )
                 added = len(st.session_state.dossier_records) - before
                 st.session_state.flash_notice = (
-                    "已加入当前会话。请在“周报与备份”下载证据 CSV。"
+                    "已加入当前会话。请在“周报与备份”下载证据 Excel。"
                     if added else "这条证据已存在，未重复添加。"
                 )
                 st.rerun()
@@ -227,25 +229,30 @@ with brief_tab:
 
     st.divider()
     st.subheader("备份与恢复")
-    st.warning("本版没有数据库。新增记录只在当前会话里；离开前下载 CSV，下次打开网页后在这里导入。")
+    st.warning("本版没有数据库。新增记录只在当前会话里；离开前下载 Excel 或 CSV，下次打开网页后在这里导入。")
+    st.download_button(
+        "下载全部产品线证据 Excel（.xlsx）",
+        xlsx_bytes(evidence),
+        "pathointel_all_evidence.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+    )
     st.download_button(
         "下载全部产品线证据 CSV",
         csv_bytes(evidence.reindex(columns=FIELDS)),
         "pathointel_all_evidence.csv",
         "text/csv",
-        type="primary",
     )
     restored_file = st.file_uploader(
-        "导入此前下载的证据 CSV（最多 1 MB）",
-        type=["csv"],
+        "导入此前下载的证据 Excel 或 CSV（最多 1 MB）",
+        type=["xlsx", "csv"],
         max_upload_size=1,
         key="restore-evidence",
     )
     if st.button("恢复证据", disabled=restored_file is None):
         try:
-            st.session_state.dossier_records, count = import_evidence_csv(
-                st.session_state.dossier_records, restored_file.getvalue()
-            )
+            restore = import_evidence_xlsx if restored_file.name.lower().endswith(".xlsx") else import_evidence_csv
+            st.session_state.dossier_records, count = restore(st.session_state.dossier_records, restored_file.getvalue())
             st.session_state.flash_notice = f"恢复 {count} 条新证据；重复记录已跳过。"
             st.rerun()
         except ValueError as error:
