@@ -66,7 +66,20 @@ def check():
     assert '本周新增已核对证据：1 条' in weekly_dossier_brief(app.session_state['dossier_records'], 'EBER/CISH')
     isolated = AppTest.from_file(path).run(timeout=30)
     assert len(isolated.session_state['dossier_records']) == 13
-    print('PASS: evidence entry, weekly brief, CSV safety, provenance, search failures/results, CISH source module and session isolation.')
+
+    source_choice = AppTest.from_file(path).run(timeout=30)
+    source_choice.session_state['website_results'] = [{
+        '页面标题': '示例 EBER 产品页', '网站域名': 'www.gzlbp.com',
+        '来源核验': '已识别厂商域名：安必平', '搜索摘要（待核）': '仅用于界面测试',
+        '链接': 'https://www.gzlbp.com/product/example',
+    }]
+    source_choice.run(timeout=30)
+    source_choice.button(key='use-source-0').click().run(timeout=30)
+    assert not source_choice.exception
+    assert source_choice.session_state['ev_vendor'] == '安必平'
+    assert source_choice.session_state['ev_url'] == 'https://www.gzlbp.com/product/example'
+    assert any('已将厂商' in notice.value for notice in source_choice.success)
+    print('PASS: source selection feedback, evidence entry, weekly brief, CSV safety, provenance, search failures/results, CISH source module and session isolation.')
 
 
 if __name__ == '__main__':

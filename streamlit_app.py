@@ -38,6 +38,7 @@ st.session_state.setdefault("dossier_records", seed_evidence())
 st.session_state.setdefault("website_results", [])
 st.session_state.setdefault("search_error", "")
 st.session_state.setdefault("website_query", "")
+st.session_state.setdefault("selected_source_url", "")
 st.session_state.setdefault("fda_results", pd.DataFrame(columns=COLUMNS))
 for field in ("ev_vendor", "ev_product", "ev_url"):
     st.session_state.setdefault(field, "")
@@ -80,6 +81,7 @@ with search_tab:
     if search_clicked:
         st.session_state.website_results = []
         st.session_state.search_error = ""
+        st.session_state.selected_source_url = ""
         try:
             with st.spinner("正在检索公开网页…"):
                 st.session_state.website_results = search_official(query, domain)
@@ -103,11 +105,16 @@ with search_tab:
                     st.session_state.ev_vendor = official_vendor(result["链接"]) or ""
                     st.session_state.ev_product = ""
                     st.session_state.ev_url = result["链接"]
-                    st.rerun()
+                    st.session_state.selected_source_url = result["链接"]
+                if (st.session_state.selected_source_url == result["链接"]
+                        and st.session_state.ev_url == result["链接"]):
+                    st.success("已将厂商（若可识别）和原文链接填入下方表单。请打开原文核对，再填写准确产品型号和具体事实。")
+                    st.markdown("[继续填写录入表单 ↓](#record-evidence)")
     else:
         st.caption("输入关键词后搜索。没有返回结果时，不推断产品不存在。")
 
     st.divider()
+    st.markdown('<span id="record-evidence"></span>', unsafe_allow_html=True)
     st.subheader("核对原文后记录一条产品事实")
     st.caption("请填写具体试剂或设备型号。每条证据只记录一个字段；价格写明地区、货币、单位、日期和口径，备案写明证号及辖区。")
     with st.form("evidence-form", clear_on_submit=False):
